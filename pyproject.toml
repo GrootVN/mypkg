@@ -9,7 +9,7 @@ description = "My utility functions"
 readme = "README.md"
 requires-python = ">=3.8"
 authors = [
-  { name = "GootVN", email = "nguye3hr@mail.uc.edu" }
+  { name = "Tri Nguyen", email = "nguye3hr@mail.uc.edu" }
 ]
 
 [project.urls]
