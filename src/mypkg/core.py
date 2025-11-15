@@ -93,4 +93,4 @@ def iVAT(R, VATflag=False, cutflag=False):
     else:
         C = []
 
-    return RiV, RV, I, C
+    return RiV, RV
