@@ -168,7 +168,7 @@ def VAT(R):
     return RV, C, I, RI
 
 
-
+@numba.jit(cache=True)
 def iVAT(R, VATflag=False, fastVATflag=True, cutflag=False):
     N, M = R.shape
 
