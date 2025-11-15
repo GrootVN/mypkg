@@ -197,9 +197,12 @@ def iVAT(R, VATflag=False, fastVATflag=True, cutflag=False):
 
     if not VATflag: # R is original dissimilarity matrix (run VAT)
         if fastVATflag:
+            print("Using fastVAT...")
             RV,_ = fastVAT(R)
         else:
+            print("Using VAT...")
             RV,_,_,_ = VAT(R)
+        print("VAT reordering completed.")
         RiV = np.zeros((N, N))
         for r in range(1, N):
             c = list(range(r))
