@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mypkg"                # the import name
+version = "0.1.0"
+description = "My utility functions"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+  { name = "GootVN", email = "nguye3hr@mail.uc.edu" }
+]
+
+[project.urls]
+Homepage = "https://github.com/GootVN/mypkg"
+
+[tool.setuptools.packages.find]
+where = ["src"]
