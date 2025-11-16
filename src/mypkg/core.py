@@ -270,7 +270,7 @@ def VAT(R: np.ndarray):
     return RV, C, I, RI
 
 
-@numba.jit(cache=True)
+# @numba.jit(cache=True)
 def iVAT(R: np.ndarray, VATflag: bool = False, fastVATflag: bool = True, cutflag: bool = False):
     """
     iVAT (improved VAT) algorithm.
