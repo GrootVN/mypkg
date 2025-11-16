@@ -39,11 +39,11 @@ sc.plot_accuracies(ax, color='tab:blue', linelabel='BreastCancer', title='Train/
 plt.show()
 
 # 6. Plot confusion matrices
-sc.plot_confusion_matrices(y_test, y_pred, norm_type='true')
+sc.plot_confusion_matrices(y_pred, y_test, norm_type='true')
 
 # 7. Compute some index sets (e.g., false negatives)
 fn_indices = sc.compute_indices("fn")
-print("False negative indices (per model):")
+print("False negative indices in training (per model):")
 for name, idx_list in fn_indices.items():
     print(name, ":", idx_list[:10], "...")  # show first 10
 
