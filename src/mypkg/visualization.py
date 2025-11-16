@@ -13,42 +13,79 @@ def plot_mulshap(shap_values, X):
 
     Parameters
     ----------
-    shap_values : array-like
-        SHAP values for a multi-class classifier. Expected shape is
-        (n_samples, n_features, n_classes) or equivalent after np.array().
+    shap_values : list or np.ndarray
+        - For tree-based multi-class models, this is usually a list of length n_classes,
+          each element an array of shape (n_samples, n_features).
+        - It can also be:
+            * a single 2D array: (n_samples, n_features)
+            * a 3D array: (n_samples, n_features, n_classes)
     X : pandas.DataFrame
         Feature matrix used to compute SHAP values (columns = feature names).
 
     Notes
     -----
-    - First, computes a mean absolute SHAP value per feature across all classes
-      and samples, and prints the top 10 features.
-    - Then generates SHAP summary plots for each class.
+    - Computes mean |SHAP| per feature across classes and samples.
+    - Prints top 10 features.
+    - Plots a SHAP summary plot per class (or a single one for 2D case).
     """
-    print("X_train1 shape:", X.shape)
-    print("shap_values shape:", np.array(shap_values).shape)
-     
-    # Aggregate SHAP values across classes by taking the mean of absolute values across classes
-    mean_abs_shap = np.mean(np.abs(shap_values).mean(axis=2), axis=0)
+    print("X shape:", X.shape)
+    print("shap_values raw type:", type(shap_values))
 
-    # Create a DataFrame to pair feature names with their importance
+    arr = np.array(shap_values)
+    print("shap_values array shape:", arr.shape)
+
+    # ----- 1) Compute mean absolute SHAP importance per feature -----
+
+    if isinstance(shap_values, list):
+        # Typical tree multi-class case:
+        # shap_values is a list: [ (n_samples, n_features), ..., per class ]
+        # arr shape: (n_classes, n_samples, n_features)
+        # Mean over classes (axis=0) and samples (axis=1) => (n_features,)
+        mean_abs_shap = np.mean(np.abs(arr), axis=(0, 1))
+    elif arr.ndim == 3:
+        # Assume shape: (n_samples, n_features, n_classes)
+        # Mean over samples and classes => (n_features,)
+        mean_abs_shap = np.mean(np.abs(arr), axis=(0, 2))
+    elif arr.ndim == 2:
+        # Shape: (n_samples, n_features)
+        mean_abs_shap = np.mean(np.abs(arr), axis=0)
+    else:
+        raise ValueError(f"Unexpected shap_values shape: {arr.shape}")
+
+    if len(mean_abs_shap) != X.shape[1]:
+        print("WARNING: feature dimension mismatch between SHAP values and X.")
+        print("len(mean_abs_shap) =", len(mean_abs_shap), "| n_features =", X.shape[1])
+
+    # ----- 2) Build importance DataFrame and print top features -----
+
     feature_importance = pd.DataFrame({
         'feature': X.columns,
         'importance': mean_abs_shap
     })
 
-    # Sort features by importance
     feature_importance = feature_importance.sort_values(by='importance', ascending=False)
-
-    # Get the top 10 most significant features
-    top_5_features = feature_importance.head(10)
+    top_10_features = feature_importance.head(10)
     print("Top 10 most significant features:")
-    print(top_5_features)
-    
-    # Plot SHAP summaries for all classes
-    for class_index in range(shap_values.shape[2]):
-        print(f"Summary plot for class {class_index}")
-        shap.summary_plot(shap_values[..., class_index], features=X)
+    print(top_10_features)
+
+    # ----- 3) SHAP summary plots -----
+
+    if isinstance(shap_values, list):
+        # One summary plot per class
+        for class_index, class_sv in enumerate(shap_values):
+            print(f"Summary plot for class {class_index}")
+            shap.summary_plot(class_sv, features=X)
+    elif arr.ndim == 3:
+        # 3D array: (n_samples, n_features, n_classes)
+        n_classes = arr.shape[2]
+        for class_index in range(n_classes):
+            print(f"Summary plot for class {class_index}")
+            shap.summary_plot(arr[..., class_index], features=X)
+    else:
+        # 2D array: single-output case
+        print("Summary plot (single output)")
+        shap.summary_plot(arr, features=X)
+
 
 
 import matplotlib.pyplot as plt

@@ -162,87 +162,7 @@ class SimpleClassifiers:
             self.train_accuracies[name] = accuracy_score(self.y_train, self.y_train_p[name])
             self.test_accuracies[name] = accuracy_score(self.y_test, self.y_test_p[name])
         return self.test_accuracies
-    
-    def tp_tn_indices(self):
-        """
-        Get indices of correctly classified samples (TP or TN) on the training set
-        for each classifier, assuming a binary classification with labels 0/1.
 
-        Returns
-        -------
-        train_tp_tn_indices : dict
-            Mapping name -> list of indices where y_true == y_pred in {0,1}.
-        """
-        self.train_tp_tn_indices = {}
-        for name in self.names:
-            self.train_tp_tn_indices[name] = [
-                index
-                for index, (y_true, y_p) in enumerate(zip(self.y_train, self.y_train_p[name]))
-                if y_true == y_p and (y_true == 1 or y_true == 0)
-            ]
-        return self.train_tp_tn_indices
-    
-    def fp_indices(self):
-        """
-        Get indices of false positives on the training set for each classifier.
-
-        Notes
-        -----
-        Assumes binary labels 0/1.
-
-        Returns
-        -------
-        train_fp_indices : dict
-            Mapping name -> list of indices considered as false positives.
-        """
-        self.train_fp_indices = {}
-        for name in self.names:
-            self.train_fp_indices[name] = [
-                index
-                for index, (y_true, y_p) in enumerate(zip(self.y_train, self.y_train_p[name]))
-                if y_true != y_p and (y_true == 1)
-            ]
-        return self.train_fp_indices
-    
-    def tn_indices(self):
-        """
-        Get indices of true negatives on the training set for each classifier.
-
-        Returns
-        -------
-        train_tn_indices : dict
-            Mapping name -> list of indices where y_true == y_pred == 0.
-        """
-        self.train_tn_indices = {}
-        for name in self.names:
-            self.train_tn_indices[name] = [
-                index
-                for index, (y_true, y_p) in enumerate(zip(self.y_train, self.y_train_p[name]))
-                if y_true == y_p and (y_true == 0)
-            ]
-        return self.train_tn_indices
-
-    def fn_indices(self):
-        """
-        Get indices of false negatives on the training set for each classifier.
-
-        Notes
-        -----
-        Assumes binary labels 0/1.
-
-        Returns
-        -------
-        train_fn_indices : dict
-            Mapping name -> list of indices considered as false negatives.
-        """
-        self.train_fn_indices = {}
-        for name in self.names:
-            self.train_fn_indices[name] = [
-                index
-                for index, (y_true, y_p) in enumerate(zip(self.y_train, self.y_train_p[name]))
-                if y_true != y_p and (y_true == 0)
-            ]
-        return self.train_fn_indices
     
     def compute_indices(self, index_type):
         """
@@ -366,41 +286,51 @@ class SimpleClassifiers:
         """
         return list(self.models.values())[i]
 
-    def plot_confusion_matrices(self, X_test, y_test, norm_type='true'):
+    def plot_confusion_matrices(self, y_pred_dict, y_test, norm_type='true'):
         """
-        Plot confusion matrices (as heatmaps) for all classifiers.
+        Plot confusion matrices (as heatmaps) using externally provided y_pred.
 
         Parameters
         ----------
-        X_test : array-like of shape (n_samples_test, n_features)
-            Test feature matrix.
-        y_test : array-like of shape (n_samples_test,)
-            True test labels.
+        y_test : array-like of shape (n_samples,)
+            True labels.
+        y_pred_dict : dict
+            Dictionary mapping classifier name -> predicted labels.
+            Example: {"RandomForestClassifier": y_pred_rf, ...}
         norm_type : {'true', 'pred', 'all', None}, optional
-            Normalization mode passed to `normalize_confusion_matrix`:
+            Normalization mode:
             - 'true': normalize by true label counts (rows sum to 1)
             - 'pred': normalize by predicted label counts (columns sum to 1)
-            - 'all' : normalize by total number of samples
-            - any other value: no normalization
+            - 'all' : divide by total number of samples
+            - anything else: no normalization
 
         Notes
         -----
-        Creates a 2x3 grid of subplots; if you have more than 6 classifiers,
-        some may not be shown.
+        Creates a 2×3 grid of subplots; if more than 6 classifiers exist,
+        only the first 6 are shown.
         """
+
         fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(15, 10))
         axes = axes.flatten()
-        for i, (name, model) in enumerate(self.models.items()):
+
+        for i, name in enumerate(self.names):
             if i >= len(axes):
                 break
-            y_pred = model.predict(X_test)
+
+            if name not in y_pred_dict:
+                raise ValueError(f"Missing predictions for classifier '{name}' in y_pred_dict.")
+
+            y_pred = y_pred_dict[name]
             cm = normalize_confusion_matrix(y_test, y_pred, norm_type)
+
             sns.heatmap(cm, annot=True, fmt='.5f', ax=axes[i], cmap='Blues')
             axes[i].set_title(name)
             axes[i].set_xlabel('Predicted')
             axes[i].set_ylabel('True')
+
         plt.tight_layout()
         plt.show()
+
 
 
 def normalize_confusion_matrix(y_true, y_pred, norm_type):
