@@ -70,7 +70,7 @@ for name, idx_list in fn_indices.items():
 # ============================================================
 # 8. t-SNE visualization (on a subset, to keep it quick)
 # ============================================================
-plot_tsne(X_train.values[:500], y_train[:500], perplexities=[30, 50])
+plot_tsne(X_train.values[:500], y_train[:500], perplexities=[30, 50, 20, 70, 10], saveimg="tsne_breastcancer.png")
 
 # ============================================================
 # 9. SHAP example (with one model)
