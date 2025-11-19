@@ -108,14 +108,20 @@ cv_results = sc.cross_validate(
     return_estimator=False,
 )
 
-print("\nCross-validation results (5-fold):")
-for name, res in cv_results.items():
-    # res is the dict returned by sklearn.model_selection.cross_validate
-    acc_mean = np.mean(res["test_accuracy"])
-    acc_std = np.std(res["test_accuracy"])
-    f1_mean = np.mean(res["test_f1"])
-    f1_std = np.std(res["test_f1"])
+import numpy as np
 
-    print(f"Model: {name}")
-    print(f"  Accuracy: {acc_mean:.4f} ± {acc_std:.4f}")
-    print(f"  F1-score: {f1_mean:.4f} ± {f1_std:.4f}")
+print("\nCross-validation results (5-fold):")
+print("{:<30} {:>22} {:>22}".format("Model", "Accuracy (mean ± std)", "F1-score (mean ± std)"))
+print("-" * 80)
+
+for name, res in cv_results.items():
+    acc_mean = np.mean(res["test_accuracy"])
+    acc_std  = np.std(res["test_accuracy"])
+    f1_mean  = np.mean(res["test_f1"])
+    f1_std   = np.std(res["test_f1"])
+
+    print("{:<30} {:>11.4f} ± {:<8.4f} {:>11.4f} ± {:<8.4f}".format(
+        name,
+        acc_mean, acc_std,
+        f1_mean, f1_std
+    ))
