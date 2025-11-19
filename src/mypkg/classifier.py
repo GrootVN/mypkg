@@ -1,315 +1,264 @@
+from typing import Dict, List, Optional, Union
+
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.base import clone
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.naive_bayes import GaussianNB
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.model_selection import cross_validate
+
 from lightgbm import LGBMClassifier
 from fuzzytree import FuzzyDecisionTreeClassifier
-from sklearn.linear_model import LogisticRegression
-import matplotlib.pyplot as plt
 from xgboost import XGBClassifier
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import classification_report
-from sklearn.metrics import confusion_matrix
 from sklearn.neural_network import MLPClassifier
-import seaborn as sns
-import numpy as np
+
+import warnings
+warnings.filterwarnings("ignore")  # e.g. DT, LGBM, etc.
 
 
-# Ignore warnings for DT https://stackoverflow.com/questions/29086398/sklearn-turning-off-warnings
-import warnings 
-warnings.filterwarnings("ignore")
-
-
-def addlabels(x, y):
+def addlabels(x, y, ax: Optional[plt.Axes] = None):
     """
-    Add text labels on top of bars or points in a 1D plot.
-
-    Parameters
-    ----------
-    x : list or array-like
-        X-axis positions or labels (must be indexable).
-    y : list or array-like
-        Y values to annotate.
-
-    Notes
-    -----
-    This function assumes you're already inside a plotting context
-    (e.g., after plt.plot or plt.bar). It writes the numeric value of `y`
-    above each x-position.
+    Add numeric value labels on top of bars or points in a 1D plot.
     """
-    for i in range(len(x)):
-        plt.text(i, round(y[i], 4), round(y[i], 4), ha='center')
+    if ax is None:
+        ax = plt.gca()
+    for i, val in enumerate(y):
+        ax.text(i, round(val, 4), round(val, 4), ha="center")
 
 
 class SimpleClassifiers:
     """
-    Wrapper for training and evaluating a collection of simple classifiers.
-
-    This class:
-    - Instantiates several sklearn-compatible classifiers by default
-    - Fits all of them on the same training data
-    - Predicts on train and test sets
-    - Computes train/test accuracies
-    - Provides helper methods to get indices of TP/TN/FP/FN on the training set
-    - Provides plotting utilities for accuracies and confusion matrices
+    Wrapper for training, evaluating, and cross-validating a collection of classifiers.
 
     Parameters
     ----------
-    classifiers : list of estimators, optional
-        List of sklearn-style classifier objects (with `.fit` and `.predict`).
-        If None, a default set of classifiers is used:
-        - DecisionTreeClassifier
-        - RandomForestClassifier
-        - LGBMClassifier
-        - LogisticRegression
-        - GaussianNB
+    classifiers : dict or list, optional
+        - If dict: {name: estimator}
+        - If list: list of sklearn-style estimators; names will be class names.
+        If None, a default set of classifiers is used.
 
     Attributes
     ----------
-    classifiers : list
-        The classifier objects.
-    names : list of str
-        Class names (e.g. 'RandomForestClassifier').
     models : dict
-        Mapping from classifier name to fitted model (after `.fit`).
-    X_train, y_train : array-like
-        Training data and labels (stored after `.fit`).
-    X_test : array-like
-        Test data (stored after `.predict`).
-    y_train_p, y_test_p : dict
-        Predicted labels on train/test for each model.
+        {name: estimator} of fitted models after .fit().
+    names : list of str
+        Model names in evaluation order.
     train_accuracies, test_accuracies : dict
-        Accuracy scores keyed by classifier name (after `.calculate_accuracies`).
+        Filled after .calculate_accuracies().
+    cv_results_ : dict
+        Filled after .cross_validate(). {name: cross_validate(...) output}
     """
 
-    def __init__(self, classifiers=None):
+    def __init__(self, classifiers: Optional[Union[Dict[str, object], List[object]]] = None):
         if classifiers is None:
-            classifiers = [
-                DecisionTreeClassifier(),         # (optionally configure max_depth)
-                # FuzzyDecisionTreeClassifier(),  # uncomment to include
-                RandomForestClassifier(),         # (optionally configure n_estimators, max_depth)
-                LGBMClassifier(verbose=-1),       # Ignore LightGBM warnings
-                # XGBClassifier(),                # uncomment to include
-                LogisticRegression(),             # may need solver='liblinear' for small / binary
-                # MLPClassifier(),                # uncomment to include
+            default_list = [
+                DecisionTreeClassifier(),
+                # FuzzyDecisionTreeClassifier(),
+                RandomForestClassifier(),
+                LGBMClassifier(verbose=-1),
+                # XGBClassifier(),
+                LogisticRegression(),
+                # MLPClassifier(),
                 GaussianNB(),
             ]
-        self.classifiers = classifiers
-        self.names = [classifier.__class__.__name__ for classifier in self.classifiers]
+            self.models = {clf.__class__.__name__: clf for clf in default_list}
+        elif isinstance(classifiers, dict):
+            self.models = classifiers
+        else:  # assume list
+            self.models = {clf.__class__.__name__: clf for clf in classifiers}
 
+        self.names = list(self.models.keys())
+
+        # slots to be filled later
+        self.X_train = None
+        self.y_train = None
+        self.X_test = None
+        self.y_test = None
+        self.y_train_p = {}
+        self.y_test_p = {}
+        self.train_accuracies = {}
+        self.test_accuracies = {}
+        self.cv_results_ = {}
+
+    # ---------------------------------------------------------------------
+    # Fit / Predict / Accuracy
+    # ---------------------------------------------------------------------
     def fit(self, X_train, y_train):
-        """
-        Fit all classifiers on the training data.
-
-        Parameters
-        ----------
-        X_train : array-like of shape (n_samples, n_features)
-            Training feature matrix.
-        y_train : array-like of shape (n_samples,)
-            Training labels.
-
-        Returns
-        -------
-        self : SimpleClassifiers
-            Fitted object.
-        """
+        """Fit all classifiers on the training data."""
         self.X_train = X_train
         self.y_train = y_train
-        self.models = {}
-        for classifier in self.classifiers:
-            self.models[classifier.__class__.__name__] = classifier.fit(self.X_train, self.y_train)
+
+        for name, clf in self.models.items():
+            self.models[name] = clf.fit(X_train, y_train)
         return self
 
     def predict(self, X_test):
         """
         Predict labels for both training and test sets for all models.
 
-        Parameters
-        ----------
-        X_test : array-like of shape (n_samples_test, n_features)
-            Test feature matrix.
-
         Returns
         -------
         y_test_p : dict
-            Dictionary mapping classifier name -> predicted labels on X_test.
+            {model_name: y_pred_on_X_test}
         """
         self.X_test = X_test
-        self.y_train_p = {}
-        self.y_test_p = {}
-        for name, model in self.models.items():
-            self.y_train_p[name] = model.predict(self.X_train)
-            self.y_test_p[name] = model.predict(self.X_test)
+
+        # train predictions (for indices / train accuracy)
+        self.y_train_p = {
+            name: model.predict(self.X_train) for name, model in self.models.items()
+        }
+
+        # test predictions
+        self.y_test_p = {
+            name: model.predict(self.X_test) for name, model in self.models.items()
+        }
+
         return self.y_test_p
-    
+
     def calculate_accuracies(self, y_test):
         """
         Compute train and test accuracy for all classifiers.
-
-        Parameters
-        ----------
-        y_test : array-like of shape (n_samples_test,)
-            True labels for X_test (must correspond to the last call to `.predict`).
-
-        Returns
-        -------
-        test_accuracies : dict
-            Mapping classifier name -> test accuracy.
+        Assumes .predict() has been called.
         """
         self.y_test = y_test
-        self.train_accuracies = {}
-        self.test_accuracies = {}
-        for name in self.names:
-            self.train_accuracies[name] = accuracy_score(self.y_train, self.y_train_p[name])
-            self.test_accuracies[name] = accuracy_score(self.y_test, self.y_test_p[name])
+
+        self.train_accuracies = {
+            name: accuracy_score(self.y_train, self.y_train_p[name])
+            for name in self.names
+        }
+        self.test_accuracies = {
+            name: accuracy_score(self.y_test, self.y_test_p[name])
+            for name in self.names
+        }
+
         return self.test_accuracies
 
-    
-    def compute_indices(self, index_type):
+    # ---------------------------------------------------------------------
+    # Cross-validation
+    # ---------------------------------------------------------------------
+    def cross_validate(
+        self,
+        X,
+        y,
+        cv=5,
+        scoring: Union[str, List[str], Dict[str, str]] = "accuracy, precision, recall, f1, roc_auc",
+        n_jobs: Optional[int] = None,
+        return_estimator: bool = False,
+    ):
         """
-        Generic method to compute TP/TN/FP/FN indices on the training set.
+        Run sklearn-style cross-validation for each classifier.
 
         Parameters
         ----------
-        index_type : {'tp_tn', 'tp', 'tn', 'fp', 'fn'}
-            Type of indices to compute:
-            - 'tp_tn': all correctly classified (both TP and TN)
-            - 'tp'   : true positives (y_true == y_pred == 1)
-            - 'tn'   : true negatives (y_true == y_pred == 0)
-            - 'fp'   : false positives (y_true == 0, y_pred == 1)
-            - 'fn'   : false negatives (y_true == 1, y_pred == 0)
+        X, y : array-like
+            Full dataset.
+        cv : int, CV splitter, or iterable, default=5
+            As in sklearn.model_selection.cross_validate.
+        scoring : str, list, or dict, default='accuracy'
+            Scoring metric(s).
+        n_jobs : int or None, optional
+            Number of parallel jobs.
+        return_estimator : bool, default=False
+            Whether to return fitted estimators for each split.
 
         Returns
         -------
-        indices : dict
-            Mapping classifier name -> list of indices.
+        cv_results_ : dict
+            {model_name: cross_validate(...) output}
+        """
+        self.cv_results_ = {}
+        for name, clf in self.models.items():
+            self.cv_results_[name] = cross_validate(
+                clone(clf),
+                X,
+                y,
+                cv=cv,
+                scoring=scoring,
+                n_jobs=n_jobs,
+                return_estimator=return_estimator,
+            )
+        return self.cv_results_
+
+    # ---------------------------------------------------------------------
+    # Utilities
+    # ---------------------------------------------------------------------
+    def compute_indices(self, index_type: str):
+        """
+        Get indices of TP/TN/FP/FN on the training set.
+
+        index_type : {'tp_tn', 'tp', 'tn', 'fp', 'fn'}
         """
         valid_types = {"tp_tn", "fp", "tn", "fn", "tp"}
         if index_type not in valid_types:
             raise ValueError(f"Invalid index_type. Choose from {valid_types}.")
-        
+
         indices = {}
+        y_true = np.asarray(self.y_train)
+
         for name in self.names:
+            y_pred = np.asarray(self.y_train_p[name])
+
             if index_type == "tp_tn":
-                indices[name] = [
-                    index
-                    for index, (y_true, y_p) in enumerate(zip(self.y_train, self.y_train_p[name]))
-                    if y_true == y_p and (y_true == 1 or y_true == 0)
-                ]
+                mask = (y_true == y_pred) & np.isin(y_true, [0, 1])
             elif index_type == "tp":
-                indices[name] = [
-                    index
-                    for index, (y_true, y_p) in enumerate(zip(self.y_train, self.y_train_p[name]))
-                    if y_true == y_p and y_true == 1
-                ]
+                mask = (y_true == y_pred) & (y_true == 1)
             elif index_type == "tn":
-                indices[name] = [
-                    index
-                    for index, (y_true, y_p) in enumerate(zip(self.y_train, self.y_train_p[name]))
-                    if y_true == y_p and y_true == 0
-                ]
+                mask = (y_true == y_pred) & (y_true == 0)
             elif index_type == "fp":
-                indices[name] = [
-                    index
-                    for index, (y_true, y_p) in enumerate(zip(self.y_train, self.y_train_p[name]))
-                    if y_true != y_p and y_true == 0
-                ]
-            elif index_type == "fn":
-                indices[name] = [
-                    index
-                    for index, (y_true, y_p) in enumerate(zip(self.y_train, self.y_train_p[name]))
-                    if y_true != y_p and y_true == 1
-                ]
+                mask = (y_true != y_pred) & (y_true == 0)
+            else:  # 'fn'
+                mask = (y_true != y_pred) & (y_true == 1)
+
+            indices[name] = np.where(mask)[0].tolist()
+
         return indices
-    
-    def plot_accuracies(self,
-                        ax,
-                        color=None,
-                        linelabel='',
-                        title=None):
-        """
-        Plot train and test accuracies for all classifiers.
 
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes
-            Axes object on which to draw the plot.
-        color : str or None, optional
-            Color used for the lines (train and test).
-        linelabel : str, optional
-            Suffix added to legend labels (e.g., experiment name).
-        title : str or None, optional
-            Title for the plot.
-
-        Notes
-        -----
-        Requires `.calculate_accuracies()` to have been called beforehand.
+    def plot_accuracies(
+        self,
+        ax: plt.Axes,
+        color: Optional[str] = None,
+        linelabel: str = "",
+        title: Optional[str] = None,
+    ):
         """
-        y1 = list(self.train_accuracies.values())
-        y2 = list(self.test_accuracies.values())
-        
-        plt.plot(
-            self.names,
-            y1,
-            color=color,
-            label="Train" if not linelabel else "Train - " + linelabel
-        )
-        addlabels(self.names, y1)
-        plt.plot(
-            self.names,
-            y2,
-            color=color,
-            linestyle='--',
-            label="Test" if not linelabel else "Test - " + linelabel
-        )
-        addlabels(self.names, y2)
-        
+        Plot train and test accuracies for all classifiers on a given Axes.
+        Assumes .calculate_accuracies() was called.
+        """
+        y_train_vals = [self.train_accuracies[name] for name in self.names]
+        y_test_vals = [self.test_accuracies[name] for name in self.names]
+
+        label_train = "Train" if not linelabel else f"Train - {linelabel}"
+        label_test = "Test" if not linelabel else f"Test - {linelabel}"
+
+        ax.plot(self.names, y_train_vals, label=label_train, color=color)
+        addlabels(self.names, y_train_vals, ax=ax)
+
+        ax.plot(self.names, y_test_vals, linestyle="--", label=label_test, color=color)
+        addlabels(self.names, y_test_vals, ax=ax)
+
         ax.set_ylim(0, 1)
-        plt.xticks(rotation=90)
-
+        ax.set_xticklabels(self.names, rotation=90)
         ax.set_title(title)
-        plt.legend()
+        ax.legend()
         plt.tight_layout()
 
-    def get_model(self, i):
+    def get_model(self, i: int):
+        """Return the i-th fitted model."""
+        return self.models[self.names[i]]
+
+    def plot_confusion_matrices(self, y_pred_dict, y_test, norm_type: str = "true"):
         """
-        Get the i-th fitted model.
+        Plot confusion matrices (heatmaps) using externally provided predictions.
 
-        Parameters
-        ----------
-        i : int
-            Index of the classifier in the internal list.
-
-        Returns
-        -------
-        model : estimator
-            The fitted model object.
-        """
-        return list(self.models.values())[i]
-
-    def plot_confusion_matrices(self, y_pred_dict, y_test, norm_type='true'):
-        """
-        Plot confusion matrices (as heatmaps) using externally provided y_pred.
-
-        Parameters
-        ----------
-        y_test : array-like of shape (n_samples,)
-            True labels.
         y_pred_dict : dict
-            Dictionary mapping classifier name -> predicted labels.
-            Example: {"RandomForestClassifier": y_pred_rf, ...}
-        norm_type : {'true', 'pred', 'all', None}, optional
-            Normalization mode:
-            - 'true': normalize by true label counts (rows sum to 1)
-            - 'pred': normalize by predicted label counts (columns sum to 1)
-            - 'all' : divide by total number of samples
-            - anything else: no normalization
-
-        Notes
-        -----
-        Creates a 2×3 grid of subplots; if more than 6 classifiers exist,
-        only the first 6 are shown.
+            {model_name: y_pred}
+        norm_type : {'true', 'pred', 'all', None}
         """
-
         fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(15, 10))
         axes = axes.flatten()
 
@@ -318,55 +267,39 @@ class SimpleClassifiers:
                 break
 
             if name not in y_pred_dict:
-                raise ValueError(f"Missing predictions for classifier '{name}' in y_pred_dict.")
+                raise ValueError(
+                    f"Missing predictions for classifier '{name}' in y_pred_dict."
+                )
 
             y_pred = y_pred_dict[name]
             cm = normalize_confusion_matrix(y_test, y_pred, norm_type)
 
-            sns.heatmap(cm, annot=True, fmt='.5f', ax=axes[i], cmap='Blues')
+            sns.heatmap(cm, annot=True, fmt=".5f", ax=axes[i], cmap="Blues")
             axes[i].set_title(name)
-            axes[i].set_xlabel('Predicted')
-            axes[i].set_ylabel('True')
+            axes[i].set_xlabel("Predicted")
+            axes[i].set_ylabel("True")
 
         plt.tight_layout()
         plt.show()
 
 
-
-def normalize_confusion_matrix(y_true, y_pred, norm_type):
+def normalize_confusion_matrix(y_true, y_pred, norm_type: str):
     """
     Compute and normalize a confusion matrix.
-
-    Parameters
-    ----------
-    y_true : array-like
-        True labels.
-    y_pred : array-like
-        Predicted labels.
-    norm_type : {'true', 'pred', 'all', other}
-        Normalization mode:
-        - 'true': normalize each row (by true label count)
-        - 'pred': normalize each column (by predicted label count)
-        - 'all' : divide by total count
-        - any other: no normalization
-
-    Returns
-    -------
-    cm_normalized : ndarray of shape (n_classes, n_classes)
-        Normalized confusion matrix.
     """
     cm = confusion_matrix(y_true, y_pred)
 
-    if norm_type == 'true':
-        cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-    elif norm_type == 'pred':
-        cm_normalized = cm.astype('float') / cm.sum(axis=0)[np.newaxis, :]
-    elif norm_type == 'all':
-        cm_normalized = cm.astype('float') / cm.sum()
+    cm = cm.astype("float")
+    if norm_type == "true":
+        row_sums = cm.sum(axis=1, keepdims=True)
+        cm_normalized = np.divide(cm, row_sums, where=row_sums != 0)
+    elif norm_type == "pred":
+        col_sums = cm.sum(axis=0, keepdims=True)
+        cm_normalized = np.divide(cm, col_sums, where=col_sums != 0)
+    elif norm_type == "all":
+        total = cm.sum()
+        cm_normalized = cm / total if total != 0 else cm
     else:
-        cm_normalized = cm.astype('float')
+        cm_normalized = cm
 
     return cm_normalized
-
-
-
