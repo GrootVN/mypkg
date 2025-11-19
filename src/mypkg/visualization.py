@@ -95,89 +95,103 @@ from sklearn.manifold import TSNE
 
 
 def plot_tsne(
-    X, 
-    y, 
-    perplexities=[5, 30, 50, 70, 100], 
-    n_components=2, 
+    X,
+    y,
+    perplexities=[5, 30, 50, 70, 100],
+    n_components=2,
     saveimg=None
 ):
     """
     Plot t-SNE visualizations with different perplexities and a legend for class labels.
+    Now auto-formats into multiple rows with a maximum of 2 columns.
 
     Parameters
     ----------
     X : array-like of shape (n_samples, n_features)
-        Feature matrix.
     y : array-like of shape (n_samples,)
-        Class labels (integer or string).
-    perplexities : list of float, optional
-        List of perplexity values to use for t-SNE.
-    n_components : int, optional (default=2)
-        Number of t-SNE output dimensions.
-        If:
-        - 2 → 2D scatter plot
-        - 3 → 3D scatter plot
-        - >3 → TSNE will run but only prints the shape 
-               (no automatic plot possible).
-    saveimg : str or None, optional
-        If not None, the plot is saved to this path.
+    perplexities : list of float
+    n_components : int (2 or 3 recommended)
+    saveimg : str or None
     """
 
-    # 3D plot support
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from sklearn.manifold import TSNE
+    import matplotlib.patches as mpatches
+    import math
+
+    num_plots = len(perplexities)
+    ncols = 2
+    nrows = math.ceil(num_plots / ncols)
+
+    # Determine 2D or 3D
     is_3d = (n_components == 3)
 
-    # Create subplots
-    fig = plt.figure(figsize=(5 * len(perplexities), 5))
+    # Create subplot grid
+    fig = plt.figure(figsize=(6 * ncols, 5 * nrows))
 
+    # Create axes
     if n_components == 2:
-        axes = [fig.add_subplot(1, len(perplexities), i+1) 
-                for i in range(len(perplexities))]
+        axes = [
+            fig.add_subplot(nrows, ncols, i + 1)
+            for i in range(num_plots)
+        ]
     elif n_components == 3:
         from mpl_toolkits.mplot3d import Axes3D
-        axes = [fig.add_subplot(1, len(perplexities), i+1, projection='3d') 
-                for i in range(len(perplexities))]
+        axes = [
+            fig.add_subplot(nrows, ncols, i + 1, projection="3d")
+            for i in range(num_plots)
+        ]
     else:
-        axes = None  # will not plot high-dimensional results
+        axes = None
 
-    # Get unique class labels and assign colors
+    # Prepare colors
     unique_labels = np.unique(y)
     colors = plt.cm.viridis(np.linspace(0, 1, len(unique_labels)))
     label_to_color = {label: color for label, color in zip(unique_labels, colors)}
 
-    # Compute & plot t-SNE for each perplexity
+    # Run t-SNE for each perplexity
     for i, perplexity in enumerate(perplexities):
-        tsne = TSNE(n_components=n_components, perplexity=perplexity, random_state=42)
+        tsne = TSNE(
+            n_components=n_components,
+            perplexity=perplexity,
+            random_state=42
+        )
         X_tsne = tsne.fit_transform(X)
 
+        # 2D
         if n_components == 2:
-            axes[i].scatter(
+            ax = axes[i]
+            ax.scatter(
                 X_tsne[:, 0],
                 X_tsne[:, 1],
-                c=[label_to_color[label] for label in y],
-                s=5
+                c=[label_to_color[lbl] for lbl in y],
+                s=6
             )
-            axes[i].set_title(f"t-SNE (perplexity={perplexity})")
-            axes[i].set_xlabel("Component 1")
-            axes[i].set_ylabel("Component 2")
+            ax.set_title(f"t-SNE (perplexity={perplexity})")
+            ax.set_xlabel("Component 1")
+            ax.set_ylabel("Component 2")
 
+        # 3D
         elif n_components == 3:
-            axes[i].scatter(
+            ax = axes[i]
+            ax.scatter(
                 X_tsne[:, 0],
                 X_tsne[:, 1],
                 X_tsne[:, 2],
-                c=[label_to_color[label] for label in y],
-                s=5
+                c=[label_to_color[lbl] for lbl in y],
+                s=8
             )
-            axes[i].set_title(f"t-SNE 3D (perplexity={perplexity})")
-            axes[i].set_xlabel("Comp 1")
-            axes[i].set_ylabel("Comp 2")
-            axes[i].set_zlabel("Comp 3")
+            ax.set_title(f"t-SNE 3D (perplexity={perplexity})")
+            ax.set_xlabel("Comp 1")
+            ax.set_ylabel("Comp 2")
+            ax.set_zlabel("Comp 3")
 
         else:
-            print(f"t-SNE result for perplexity={perplexity} has shape: {X_tsne.shape}")
-            print("Plotting skipped because n_components > 3.")
+            print(f"t-SNE result for perplexity={perplexity}: shape {X_tsne.shape}")
+            print("Plot skipped because n_components > 3.")
 
-    # Legend (only for 2D/3D)
+    # Add legend
     if n_components in [2, 3]:
         legend_patches = [
             mpatches.Patch(color=label_to_color[label], label=str(label))
@@ -193,7 +207,7 @@ def plot_tsne(
     plt.tight_layout()
 
     if saveimg:
-        plt.savefig(saveimg, dpi=300, bbox_inches='tight')
+        plt.savefig(saveimg, dpi=300, bbox_inches="tight")
         print(f"Plot saved to {saveimg}")
     else:
         plt.show()
